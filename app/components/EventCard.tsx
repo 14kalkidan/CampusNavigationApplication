@@ -1,194 +1,191 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  TouchableOpacity,
+  Animated,
+  Easing,
+  ScrollView,
+} from 'react-native';
+import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Event } from '../APIServices/eventAPI';
 import { Colors } from '../styles/global';
 
-interface Event {
-  id: string;
-  title: string;
-  location: string;
-  date: string;
-  description: string;
-  image: any; // Supports require() or string for Django
+interface EventCardProps {
+  event: Event;
+  onPress: () => void;
 }
 
-export default function EventCard({ event }: { event?: Event }) {
+const COLLAPSED_HEIGHT = 130;
+const EXPANDED_HEIGHT = 400;
+
+const EventCard: React.FC<EventCardProps> = ({ event, onPress }) => {
   const router = useRouter();
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [animation] = useState(new Animated.Value(0));
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  const heightAnim = useRef(new Animated.Value(0)).current;
+  const contentOpacity = useRef(new Animated.Value(0)).current;
 
-  // Return null if event is undefined or null
-  if (!event) {
-    console.warn('EventCard received undefined event prop');
-    return null;
-  }
+  const toggleCollapse = () => {
+    Animated.parallel([
+      Animated.timing(heightAnim, {
+        toValue: isCollapsed ? 1 : 0,
+        duration: 300,
+        easing: Easing.ease,
+        useNativeDriver: false,
+      }),
+      Animated.timing(contentOpacity, {
+        toValue: isCollapsed ? 1 : 0,
+        duration: 200,
+        easing: Easing.ease,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
-  const toggleExpand = () => {
-    setIsExpanded(!isExpanded);
-    Animated.timing(animation, {
-      toValue: isExpanded ? 0 : 1,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    setIsCollapsed(!isCollapsed);
   };
 
-  const detailsHeight = animation.interpolate({
+  const handleLocationPress = () => {
+    if (event.coordinates) {
+      router.push({
+        pathname: '/screens/Search',
+        params: {
+          lat: event.coordinates.latitude.toString(),
+          lng: event.coordinates.longitude.toString(),
+        },
+      });
+    }
+  };
+
+  const cardHeight = heightAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 80], // Reduced height due to fewer details
+    outputRange: [COLLAPSED_HEIGHT, EXPANDED_HEIGHT],
   });
 
   return (
-    <View style={styles.cardContainer}>
-      <TouchableOpacity
-        style={styles.card}
-        onPress={toggleExpand}
-        accessible
-        accessibilityLabel={`Toggle details for ${event.title || 'event'}`}
-        accessibilityRole="button"
-      >
-        <View style={styles.imageContainer}>
-          <Image
-            source={
-              typeof event.image === 'string'
-                ? { uri: event.image }
-                : event.image || require('../../assets/images/3.jpg')
-            }
-            style={styles.image}
-            resizeMode="cover"
-          />
-          <LinearGradient
-            colors={['rgba(0,0,0,0.4)', 'transparent']}
-            style={styles.imageGradient}
-          />
-        </View>
-        <View style={styles.headerContainer}>
-          <View style={styles.titleContainer}>
-            <Text style={styles.title}>{event.title || 'Untitled Event'}</Text>
-            <Text style={styles.subtext}>
-              <Ionicons name="location-outline" size={14} color={Colors.textGray} />{' '}
-              {event.location || 'Unknown Location'}
-            </Text>
-            <Text style={styles.subtext}>
-              <Ionicons name="calendar-outline" size={14} color={Colors.textGray} />{' '}
-              {event.date || 'TBD'}
-            </Text>
-          </View>
-          <Ionicons
-            name={isExpanded ? 'chevron-up' : 'chevron-down'}
-            size={20}
-            color={Colors.primary}
-            style={styles.expandIcon}
-          />
-        </View>
+    <Animated.View style={[styles.card, { height: cardHeight }]}>
+      <TouchableOpacity style={styles.toggleButton} onPress={toggleCollapse}>
+        <MaterialIcons
+          name={isCollapsed ? 'keyboard-arrow-up' : 'keyboard-arrow-down'}
+          size={24}
+          color="#666"
+        />
       </TouchableOpacity>
-      <Animated.View style={[styles.details, { height: detailsHeight }]}>
-        {isExpanded && (
-          <View style={styles.detailsContent}>
-            <Text style={styles.detailText}>
-              <Ionicons name="information-circle-outline" size={14} color={Colors.textGray} />{' '}
-              {event.description || 'No description available'}
-            </Text>
-          
-          </View>
+
+      {event.image && <Image source={{ uri: event.image }} style={styles.image} />}
+
+      <View style={styles.content}>
+        <Text style={styles.title}>{event.title}</Text>
+
+        <TouchableOpacity onPress={handleLocationPress}>
+          <Text style={styles.location}>
+            <MaterialIcons name="place" size={14} color={Colors.primary} /> {event.location_name}
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={styles.date}>
+          <MaterialIcons name="calendar-today" size={14} color={Colors.secondary} />{' '}
+          {new Date(event.start_date).toLocaleDateString()} -{' '}
+          {new Date(event.end_date).toLocaleDateString()}
+        </Text>
+
+        {!isCollapsed && (
+          <Animated.View style={{ opacity: contentOpacity }}>
+            <ScrollView style={styles.extraContent}>
+              {event.description && (
+                <Text style={styles.description}>{event.description}</Text>
+              )}
+              {event.category && (
+                <Text style={styles.category}>
+                  <FontAwesome5 name="tag" size={13} /> Category: {event.category}
+                </Text>
+              )}
+
+              <TouchableOpacity onPress={onPress} style={styles.button}>
+                <Text style={styles.buttonText}>More Info</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </Animated.View>
         )}
-      </Animated.View>
-    </View>
+      </View>
+    </Animated.View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  cardContainer: {
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
     marginVertical: 10,
     marginHorizontal: 16,
-    borderRadius: 15,
-    backgroundColor: Colors.white,
-    shadowColor: Colors.primary,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 6,
+    elevation: 5,
     overflow: 'hidden',
   },
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  imageContainer: {
-    position: 'relative',
+  toggleButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 10,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 4,
   },
   image: {
-    width: 120,
-    height: 120,
-    borderTopLeftRadius: 15,
-    borderBottomLeftRadius: 15,
+    width: '100%',
+    height: 100,
   },
-  imageGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    borderTopLeftRadius: 15,
-    borderBottomLeftRadius: 15,
-  },
-  headerContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  content: {
     padding: 12,
-  },
-  titleContainer: {
+    paddingTop: 30,
     flex: 1,
   },
   title: {
-    fontWeight: '700',
     fontSize: 18,
+    fontWeight: 'bold',
     color: Colors.text,
     marginBottom: 4,
   },
-  subtext: {
+  location: {
+    fontSize: 14,
+    color: Colors.primary,
+    marginBottom: 4,
+    textDecorationLine: 'underline',
+  },
+  date: {
     fontSize: 13,
-    color: Colors.textGray,
-    marginTop: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
+    color: Colors.secondary,
+    marginBottom: 6,
   },
-  expandIcon: {
-    marginLeft: 8,
+  extraContent: {
+    marginTop: 8,
   },
-  details: {
-    backgroundColor: Colors.card,
-    overflow: 'hidden',
+  description: {
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 6,
   },
-  detailsContent: {
-    padding: 12,
-  },
-  detailText: {
+  category: {
     fontSize: 13,
-    color: Colors.textGray,
-    marginTop: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
+    color: Colors.secondary,
+    marginBottom: 8,
   },
-  viewDetailsButton: {
-    marginTop: 12,
+  button: {
     backgroundColor: Colors.primary,
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 6,
     alignItems: 'center',
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 4,
+    marginTop: 6,
   },
-  viewDetailsText: {
-    color: Colors.white,
-    fontWeight: '600',
-    fontSize: 14,
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
+
+export default EventCard;
