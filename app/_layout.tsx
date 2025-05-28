@@ -1,20 +1,20 @@
-// app/_layout.tsx
-import { Slot } from 'expo-router';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { SettingsProvider } from './context/SettingContext';
+import { Stack } from 'expo-router';
 import { AuthProvider } from './context/AuthContext';
-import { AccessibilityProvider } from './context/AccessibilityContext';
+import { SettingsProvider } from './context/SettingContext'; 
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <SettingsProvider>
-        <AuthProvider>
-          <AccessibilityProvider>
-            <Slot />
-          </AccessibilityProvider>
-        </AuthProvider>
-      </SettingsProvider>
-    </SafeAreaProvider>
+    <SettingsProvider>
+      <AuthProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="screens/[id]" />
+          <Stack.Screen name="search" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="accessibility" />
+          <Stack.Screen name="auth" />
+        </Stack>
+      </AuthProvider>
+    </SettingsProvider>
   );
 }
