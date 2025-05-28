@@ -12,9 +12,12 @@ const AuthContext = createContext<AuthContextType>({
   setIsSignedIn: () => {},
 });
 
-// The provider component that wraps your app
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [isSignedIn, setIsSignedIn] = useState(false);
+  const logout = async () => {
+    await AsyncStorage.clear();
+    setIsSignedIn(false);
+    setUserRole(null);
+    router.replace("../screens/auth"); // or your login screen
+  };
 
   return (
     <AuthContext.Provider value={{ isSignedIn, setIsSignedIn }}>
