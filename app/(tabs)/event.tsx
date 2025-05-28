@@ -1,75 +1,92 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { useAuth } from '../context/AuthContext';
-import TopNav from '../components/TopNav';
-import SearchBar from '../components/SearchBar';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { fetchOngoingEvents, fetchUpcomingEvents, fetchCompletedEvents, Event } from '../APIServices/eventAPI';
 import EventCard from '../components/EventCard';
-import { Colors } from '../styles/global'; // Removed useColors import
-import { mockEvents } from './index';
+import TopNav from '../components/TopNav';
+import GoBackButton from '../components/GoBackButton';
+import { useAuth } from '../context/AuthContext';
+import { Colors } from '../styles/global';
 
-const eventsData = {
-  upcoming: mockEvents,
-  ongoing: [
-    {
-      id: '3',
-      title: 'Ongoing Event 1',
-      location: 'Blue Carpet',
-      date: 'Today, 4 PM',
-      description: 'An ongoing event with live performances.',
-      image: require('../../assets/images/3.jpg'),
-    },
-  ],
-  completed: [
-    {
-      id: '4',
-      title: 'Completed Event 1',
-      location: 'Library',
-      date: 'May 10',
-      description: 'A past event in the library.',
-      image: require('../../assets/images/4.jpg'),
-    },
-    {
-      id: '5',
-      title: 'Completed Event 2',
-      location: 'Sports Ground',
-      date: 'May 15',
-      description: 'A past sports event.',
-      image: require('../../assets/images/5.jpg'),
-    },
-  ],
-};
+const { width } = Dimensions.get('window');
 
 export default function EventScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const isSignedIn = !!user;
   const [selectedTab, setSelectedTab] = useState<'upcoming' | 'ongoing' | 'completed'>('upcoming');
+  const [events, setEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const renderEvents = () => {
-    const list = eventsData[selectedTab];
-    if (list.length === 0) {
-      return <Text style={[styles.noEvents, { color: Colors.secondary }]}>No events found.</Text>;
+  const fetchEvents = async (tab: 'upcoming' | 'ongoing' | 'completed') => {
+    setLoading(true);
+    setError(null);
+    try {
+      let fetchedEvents: Event[] = [];
+      if (tab === 'upcoming') {
+        fetchedEvents = await fetchUpcomingEvents();
+      } else if (tab === 'ongoing') {
+        fetchedEvents = await fetchOngoingEvents();
+      } else {
+        fetchedEvents = await fetchCompletedEvents();
+      }
+      setEvents(fetchedEvents);
+    } catch (err: any) {
+      setError(err.message || `Failed to load ${tab} events`);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    return list.map((event) => <EventCard key={event.id} event={event} />);
+  useEffect(() => {
+    console.log({ fetchUpcomingEvents, fetchOngoingEvents, fetchCompletedEvents }); // Debug imports
+    fetchEvents(selectedTab);
+  }, [selectedTab]);
+
+  const handleLocationPress = (coordinates: { latitude: number; longitude: number }) => {
+    console.log('Location pressed:', coordinates); // Placeholder for map navigation
+  };
+
+  const handleEventPress = (event: Event) => {
+    router.push({
+      pathname: '/search',
+      params: {
+        latitude: event.latitude,
+        longitude: event.longitude,
+        name: event.name,
+        category: event.category || 'Event',
+        image: event.image || null, // Pass image if available, else null
+      },
+    });
   };
 
   return (
     <View style={[styles.container, { backgroundColor: Colors.background }]}>
       <TopNav isSignedIn={isSignedIn} />
-      <SearchBar />
+      <View style={styles.header}>
+        <GoBackButton />
+        <Text style={styles.sectionTitle}>
+          {selectedTab.charAt(0).toUpperCase() + selectedTab.slice(1)} Events
+        </Text>
+      </View>
 
       <View style={[styles.tabsContainer, { backgroundColor: Colors.white }]}>
         {['upcoming', 'ongoing', 'completed'].map((tab) => (
           <TouchableOpacity
             key={tab}
-            onPress={() => setSelectedTab(tab as any)}
+            onPress={() => setSelectedTab(tab as 'upcoming' | 'ongoing' | 'completed')}
             style={[
               styles.tabButton,
-              { 
-                borderColor: Colors.primary, 
-                backgroundColor: Colors.background 
+              { borderColor: Colors.primary, backgroundColor: Colors.background },
+              selectedTab === tab && {
+                backgroundColor: Colors.primary,
+                shadowColor: Colors.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 6,
+                elevation: 6,
               },
-              selectedTab === tab && { backgroundColor: Colors.primary },
             ]}
           >
             <Text
@@ -85,25 +102,63 @@ export default function EventScreen() {
         ))}
       </View>
 
-      <ScrollView style={styles.eventsList} showsVerticalScrollIndicator={false}>
-        {renderEvents()}
+      <ScrollView
+        style={styles.eventsList}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.eventsContainer}
+      >
+        {loading ? (
+          <Text style={[styles.noEvents, { color: Colors.secondary }]}>Loading events...</Text>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <Text style={[styles.noEvents, { color: Colors.error }]}>{error}</Text>
+            <TouchableOpacity onPress={() => fetchEvents(selectedTab)} style={styles.retryButton}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : events.length === 0 ? (
+          <Text style={[styles.noEvents, { color: Colors.secondary }]}>
+            No {selectedTab} events found.
+          </Text>
+        ) : (
+          events.map((event) => (
+            <EventCard
+              key={event.id}
+              event={event}
+              onLocationPress={handleLocationPress}
+              onPress={() => handleEventPress(event)}
+            />
+          ))
+        )}
       </ScrollView>
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 10,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
   tabsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 10,
+    borderRadius: 30,
     marginHorizontal: 16,
     marginVertical: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabButton: {
     flex: 1,
@@ -118,14 +173,41 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
+  sectionTitle: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: Colors.text,
+    textAlign: 'center',
+  },
   eventsList: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
     marginBottom: 20,
+  },
+  eventsContainer: {
+    paddingBottom: 30,
   },
   noEvents: {
     textAlign: 'center',
     marginTop: 40,
     fontSize: 16,
+    width: width - 40,
+    alignSelf: 'center',
+  },
+  errorContainer: {
+    alignItems: 'center',
+    marginTop: 40,
+  },
+  retryButton: {
+    marginTop: 10,
+    backgroundColor: Colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    color: Colors.white,
+    fontWeight: '600',
   },
 });

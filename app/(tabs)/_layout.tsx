@@ -1,3 +1,4 @@
+// app/(tabs)/_layout.tsx
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View } from 'react-native';
@@ -21,17 +22,14 @@ export default function _layout() {
         }}
       />
       <Tabs.Screen
-  name="search"  // ✅ Matches search.tsx
-  options={{ 
-    title: 'Search',  // Add a title or keep empty
-    tabBarIcon: ({ color, size }) => (
-      <Ionicons name="search-outline" size={size} color={color} />
-    ),
-  }}
-/>
-  
-      
-      
+        name="search"
+        options={{ 
+          title: 'Search',  
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="search-outline" size={size} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="event"
         options={{

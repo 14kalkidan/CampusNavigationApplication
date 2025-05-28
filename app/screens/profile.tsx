@@ -1,458 +1,413 @@
-import React, { useState, useEffect, useContext } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Image,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  Switch,
+import React, { useContext, useEffect, useState } from 'react';
+import { 
+  View, Text, Switch, TouchableOpacity, StyleSheet, ScrollView, LayoutAnimation, 
+  UIManager, Platform, Image, TextInput, Alert 
 } from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import { MaterialIcons } from '@expo/vector-icons';
+import Collapsible from 'react-native-collapsible';
 import { useRouter } from 'expo-router';
-import { Ionicons, Feather, FontAwesome5 } from '@expo/vector-icons';
+import { ThemeContext, LanguageContext, AccessibilityContext } from '../context/SettingContext';
+import GoBackButton from '../components/GoBackButton';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { UserContext, ThemeContext, LanguageContext } from '../context/Contexts';
 
-const Colors = {
-  darkBlue: '#021024',
-  deepBlue: '#052659',
-  teal: '#548383',
-  lightBlue: '#7DA0C4',
-  paleBlue: '#C1E8FF',
-  white: '#FFFFFF',
-  black: '#000000',
-  errorRed: '#e53935',
-};
+if (Platform.OS === 'android') {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
 
-export default function ProfileScreen() {
-  const { name, profileImage, updateName, updateProfileImage } = useContext(UserContext);
+const SettingsScreen = () => {
   const { theme, setTheme } = useContext(ThemeContext);
-  const { language, t } = useContext(LanguageContext);
-  const [newName, setNewName] = useState(name);
-  const [imageLoading, setImageLoading] = useState(false);
-  const [nameEditing, setNameEditing] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
+  const { language, setLanguage } = useContext(LanguageContext);
+  const { 
+    textSize, setTextSize, 
+    highContrast, setHighContrast, 
+    textToSpeech, setTextToSpeech 
+  } = useContext(AccessibilityContext);
   const router = useRouter();
 
+  const [isAccessibilityCollapsed, setIsAccessibilityCollapsed] = useState(true);
+  const [username, setUsername] = useState('Guest');
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempUsername, setTempUsername] = useState('');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+
   useEffect(() => {
-    setNewName(name);
-  }, [name]);
-
-  const pickImage = async () => {
-    try {
-      setImageLoading(true);
-      setModalVisible(false);
-
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(t('permissionRequired'), t('photoLibraryAccess'));
-        return;
+    const loadUserData = async () => {
+      try {
+        const storedUsername = await AsyncStorage.getItem('username');
+        const storedImage = await AsyncStorage.getItem('profileImage');
+        
+        if (storedUsername) setUsername(storedUsername);
+        if (storedImage) setProfileImage(storedImage);
+      } catch (error) {
+        console.error('Error loading user data:', error);
       }
+    };
+    
+    loadUserData();
+  }, []);
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        updateProfileImage(result.assets[0].uri, true); // Upload to Django
-      }
-    } catch (error) {
-      console.error('Image picker error:', error);
-      Alert.alert(t('error'), t('failedToSelectImage'));
-    } finally {
-      setImageLoading(false);
-    }
+  const toggleTheme = async () => {
+    Haptics.selectionAsync();
+    const newTheme = theme === 'Light' ? 'Dark' : 'Light';
+    setTheme(newTheme);
+    await AsyncStorage.setItem('theme', newTheme);
   };
 
-  const handleNameUpdate = () => {
-    const trimmedName = newName.trim();
-    if (!trimmedName) {
-      Alert.alert(t('invalidName'), t('invalidNameMessage'));
-      setNewName(name || 'User');
+  const toggleLanguage = async () => {
+    Haptics.selectionAsync();
+    const newLang = language === 'en' ? 'am' : 'en';
+    setLanguage(newLang);
+    await AsyncStorage.setItem('language', newLang);
+  };
+
+  const toggleHighContrast = async () => {
+    Haptics.selectionAsync();
+    setHighContrast(!highContrast);
+    await AsyncStorage.setItem('highContrast', JSON.stringify(!highContrast));
+  };
+
+  const toggleTextToSpeech = async () => {
+    Haptics.selectionAsync();
+    setTextToSpeech(!textToSpeech);
+    await AsyncStorage.setItem('textToSpeech', JSON.stringify(!textToSpeech));
+  };
+
+  const toggleAccessibility = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsAccessibilityCollapsed(!isAccessibilityCollapsed);
+  };
+
+  const resetAccessibility = async () => {
+    setTextSize(16);
+    setHighContrast(false);
+    setTextToSpeech(false);
+    await AsyncStorage.multiRemove(['textSize', 'highContrast', 'textToSpeech']);
+  };
+
+  const startEditing = () => {
+    setTempUsername(username);
+    setIsEditing(true);
+  };
+
+  const saveUsername = async () => {
+    if (tempUsername.trim() === '') {
+      Alert.alert('Error', 'Username cannot be empty');
+      return;
+    }
+    
+    setUsername(tempUsername);
+    setIsEditing(false);
+    await AsyncStorage.setItem('username', tempUsername);
+  };
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'We need access to your photos to change your profile picture');
       return;
     }
 
-    updateName(trimmedName);
-    setNameEditing(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled) {
+      setProfileImage(result.assets[0].uri);
+      await AsyncStorage.setItem('profileImage', result.assets[0].uri);
+    }
   };
 
-  const toggleTheme = () => {
-    const newTheme = theme === 'Dark' ? 'Light' : 'Dark';
-    Alert.alert(
-      t('darkMode'),
-      `Switch to ${newTheme} mode?`,
-      [
-        { text: t('cancel'), style: 'cancel' },
-        { text: 'Confirm', onPress: () => setTheme(newTheme) },
-      ]
-    );
+  const handleSignOut = async () => {
+    await AsyncStorage.removeItem('userToken'); 
+    router.replace('./landing'); 
   };
 
-  const handleLanguageChange = (lang: 'en' | 'am') => {
-    setLanguage(lang);
-  };
-
-  const handleSignOut = () => {
-    Alert.alert(
-      t('signOut'),
-      'Are you sure you want to sign out?',
-      [
-        { text: t('cancel'), style: 'cancel' },
-        { text: t('signOut'), onPress: () => router.push('./landing') },
-      ]
-    );
-  };
-
-  const dynamicStyles = {
-    container: {
-      backgroundColor: theme === 'Dark' ? Colors.darkBlue : Colors.white,
+  const translations = {
+    en: {
+      settings: 'Settings', theme: 'Theme', language: 'Language', accessibility: 'Accessibility',
+      textSize: 'Text Size', highContrast: 'High Contrast', textToSpeech: 'Text to Speech',
+      light: 'Light', dark: 'Dark', english: 'English', amharic: 'Amharic',
+      enlarge: 'Enlarge Text', enable: 'Enable', disable: 'Disable', signIn: 'Sign In', 
+      reset: 'Reset Accessibility', feedback: 'Feedback', uploadImage: 'Upload Image',
+      signOut: 'Sign Out', edit: 'Edit', save: 'Save', cancel: 'Cancel'
     },
-    text: {
-      color: theme === 'Dark' ? Colors.white : Colors.black,
-    },
-    card: {
-      backgroundColor: theme === 'Dark' ? Colors.deepBlue : Colors.paleBlue,
+    am: {
+      settings: 'ቅንብሮች', theme: 'ገጽታ', language: 'ቋንቋ', accessibility: 'ተገቢነት',
+      textSize: 'የጽሑፍ መጠን', highContrast: 'ከፍተኛ መልክ', textToSpeech: 'ጽሑፍ ወደ ድምፅ',
+      light: 'ቀላል', dark: 'ጨለማ', english: 'እንግሊዝኛ', amharic: 'አማርኛ',
+      enlarge: 'ጨምር ጽሑፍ', enable: 'አንቃ', disable: 'ተግባር', signIn: 'ግባ', 
+      reset: 'ተገቢነትን ወደ መነሻ መልስ', feedback: 'ግብረመልስ', uploadImage: 'ምስል ጫን',
+      signOut: 'ውጣ', edit: 'አርም', save: 'አስቀምጥ', cancel: 'ሰርዝ'
     },
   };
+
+  const t = (key) => translations[language][key];
 
   return (
-    <ScrollView
-      style={[styles.container, dynamicStyles.container]}
-      contentContainerStyle={styles.contentContainer}
-    >
-      {/* Header */}
+    <View style={[styles.container, { backgroundColor: theme === 'Dark' ? '#1A1A1A' : '#F5F5F5' }]}>      
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={theme === 'Dark' ? Colors.white : Colors.black}
-          />
-        </TouchableOpacity>
-        <Text style={[styles.title, dynamicStyles.text]}>{t('profile')}</Text>
-        <View style={{ width: 24 }} />
+        <GoBackButton />
+        <Text style={[styles.title, { fontSize: textSize, color: highContrast ? '#FFFFFF' : theme === 'Dark' ? '#E0E0E0' : '#333333' }]}>
+          {t('settings')}
+        </Text>
       </View>
 
-      {/* Profile Section */}
-      <View style={[styles.profileCard, dynamicStyles.card]}>
-        <TouchableOpacity onPress={() => setModalVisible(true)}>
-          {imageLoading ? (
-            <ActivityIndicator size="large" color={Colors.teal} />
-          ) : (
-            <>
-              <Image
-                source={profileImage ? { uri: profileImage } : require('../../assets/images/1.jpg')}
-                style={styles.avatar}
-                onError={() => {
-                  console.log('Image load error');
-                  updateProfileImage(null);
-                }}
-              />
-              <View style={styles.editIcon}>
-                <Feather name="edit" size={18} color={Colors.white} />
-              </View>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.nameContainer}>
-          {nameEditing ? (
-            <TextInput
-              style={[styles.nameInput, dynamicStyles.text]}
-              value={newName}
-              onChangeText={setNewName}
-              onSubmitEditing={handleNameUpdate}
-              onBlur={handleNameUpdate}
-              autoFocus
-              maxLength={30}
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        {/* Profile Section */}
+        <View style={styles.profileSection}>
+          <TouchableOpacity onPress={pickImage}>
+            <Image 
+              source={profileImage ? { uri: profileImage } : require('../../assets/images/logo.png')} 
+              style={styles.profileImage}
             />
-          ) : (
-            <TouchableOpacity
-              onPress={() => setNameEditing(true)}
-              style={styles.nameDisplay}
-            >
-              <Text style={[styles.nameText, dynamicStyles.text]}>{newName}</Text>
-              <Feather
-                name="edit"
-                size={16}
-                color={theme === 'Dark' ? Colors.lightBlue : Colors.deepBlue}
-              />
-            </TouchableOpacity>
-          )}
-          <Text style={[styles.joinedText, { color: Colors.teal }]}>{t('joined')}</Text>
-        </View>
-      </View>
-
-      {/* Settings Section */}
-      <View style={[styles.settingsCard, dynamicStyles.card]}>
-        <View style={styles.settingRow}>
-          <FontAwesome5 name="language" size={20} color={Colors.teal} />
-          <Text style={[styles.settingLabel, dynamicStyles.text]}>{t('language')}</Text>
-          <Picker
-            selectedValue={language}
-            style={[styles.picker, dynamicStyles.text, { backgroundColor: theme === 'Dark' ? Colors.deepBlue : Colors.paleBlue }]}
-            onValueChange={handleLanguageChange}
-            dropdownIconColor={theme === 'Dark' ? Colors.white : Colors.black}
-          >
-            <Picker.Item label="English" value="en" />
-            <Picker.Item label="Amharic" value="am" />
-          </Picker>
-        </View>
-
-        <View style={styles.settingRow}>
-          <FontAwesome5 name="adjust" size={20} color={Colors.teal} />
-          <Text style={[styles.settingLabel, dynamicStyles.text]}>{t('darkMode')}</Text>
-          <Switch
-            value={theme === 'Dark'}
-            onValueChange={toggleTheme}
-            thumbColor={theme === 'Dark' ? Colors.deepBlue : Colors.lightBlue}
-            trackColor={{ false: Colors.lightBlue, true: Colors.paleBlue }}
-          />
-        </View>
-      </View>
-
-      {/* Navigation Section */}
-      <View style={[styles.navCard, dynamicStyles.card]}>
-        <NavItem
-          icon="accessibility"
-          title={t('accessibilitySettings')}
-          onPress={() => router.push('./accessibility')}
-          theme={theme}
-        />
-        <NavItem
-          icon="chatbubbles"
-          title={t('feedback')}
-          onPress={() => router.push('./feedback')}
-          theme={theme}
-        />
-        <NavItem
-          icon="cloud-upload"
-          title={t('uploadImage')}
-          onPress={() => router.push('./uploadImage')}
-          theme={theme}
-        />
-      </View>
-
-      {/* Sign Out */}
-      <TouchableOpacity
-        style={[styles.signOutButton, { borderColor: Colors.errorRed }]}
-        onPress={handleSignOut}
-      >
-        <FontAwesome5 name="sign-out-alt" size={20} color={Colors.errorRed} />
-        <Text style={[styles.signOutText, { color: Colors.errorRed }]}>{t('signOut')}</Text>
-      </TouchableOpacity>
-
-      {/* Image Picker Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, dynamicStyles.card]}>
-            <Text style={[styles.modalTitle, dynamicStyles.text]}>{t('changeProfilePicture')}</Text>
-            <Pressable
-              style={[styles.modalButton, { backgroundColor: Colors.teal }]}
-              onPress={pickImage}
-            >
-              <Text style={styles.modalButtonText}>{t('chooseFromGallery')}</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.modalButton, { backgroundColor: Colors.deepBlue }]}
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.modalButtonText}>{t('cancel')}</Text>
-            </Pressable>
+            <Text style={[styles.uploadText, { color: theme === 'Dark' ? '#BB86FC' : '#6200EE' }]}>
+              {t('uploadImage')}
+            </Text>
+          </TouchableOpacity>
+          
+          <View style={styles.usernameContainer}>
+            {isEditing ? (
+              <View style={styles.editContainer}>
+                <TextInput
+                  value={tempUsername}
+                  onChangeText={setTempUsername}
+                  style={[styles.usernameInput, { 
+                    color: highContrast ? '#FFFFFF' : theme === 'Dark' ? '#E0E0E0' : '#333333',
+                    fontSize: textSize
+                  }]}
+                  autoFocus
+                />
+                <TouchableOpacity onPress={saveUsername} style={styles.editButton}>
+                  <MaterialIcons name="check" size={20} color="green" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={cancelEditing} style={styles.editButton}>
+                  <MaterialIcons name="close" size={20} color="red" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.editContainer}>
+                <Text style={[styles.usernameText, { fontSize: textSize }]}>{username}</Text>
+                <TouchableOpacity onPress={startEditing} style={styles.editButton}>
+                  <MaterialIcons name="edit" size={20} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
-      </Modal>
-    </ScrollView>
+
+             <View style={styles.section}>
+          <TouchableOpacity style={styles.row} onPress={toggleTheme} accessibilityLabel={t('theme')}>
+            <MaterialIcons 
+              name={theme === 'Dark' ? 'dark-mode' : 'light-mode'} 
+              size={24} 
+              color={theme === 'Dark' ? '#BB86FC' : 'orange'} 
+            />
+            <Text style={[styles.text, { fontSize: textSize, color: highContrast ? '#FFFFFF' : theme === 'Dark' ? '#E0E0E0' : '#333333' }]}>
+              {t('theme')} ({t(theme.toLowerCase())})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.row} onPress={toggleLanguage} accessibilityLabel={t('language')}>
+            <MaterialIcons name="language" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+            <Text style={[styles.text, { fontSize: textSize, color: highContrast ? '#FFFFFF' : theme === 'Dark' ? '#E0E0E0' : '#333333' }]}>
+              {t('language')} ({t(language === 'en' ? 'english' : 'amharic')})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={styles.section} onPress={toggleAccessibility} accessibilityLabel={t('accessibility')}>
+          <View style={styles.row}>
+            <MaterialIcons name="accessibility" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+            <Text style={[styles.text, { fontSize: textSize, color: highContrast ? '#FFFFFF' : theme === 'Dark' ? '#E0E0E0' : '#333333' }]}>
+              {t('accessibility')}
+            </Text>
+            <MaterialIcons 
+              name={isAccessibilityCollapsed ? 'expand-more' : 'expand-less'} 
+              size={24} 
+              color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} 
+            />
+          </View>
+        </TouchableOpacity>
+
+        <Collapsible collapsed={isAccessibilityCollapsed}>
+          <View style={styles.collapsible}>
+            <View style={styles.row}>
+              <MaterialIcons name="format-size" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+              <Text style={[styles.text, { fontSize: textSize }]}>{t('textSize')} ({textSize}px)</Text>
+              <TouchableOpacity onPress={() => setTextSize(prev => Math.min(prev + 2, 24))}>
+                <MaterialIcons name="add" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setTextSize(prev => Math.max(prev - 2, 14))}>
+                <MaterialIcons name="remove" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.row}>
+              <MaterialIcons name="invert-colors" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+              <Text style={[styles.text, { fontSize: textSize }]}>{t('highContrast')}</Text>
+              <Switch 
+                value={highContrast} 
+                onValueChange={toggleHighContrast}
+                thumbColor={theme === 'Dark' ? '#BB86FC' : '#6200EE'}
+              />
+            </View>
+
+            <View style={styles.row}>
+              <MaterialIcons name="hearing" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+              <Text style={[styles.text, { fontSize: textSize }]}>{t('textToSpeech')} ({t(textToSpeech ? 'enable' : 'disable')})</Text>
+              <Switch 
+                value={textToSpeech} 
+                onValueChange={toggleTextToSpeech}
+                thumbColor={theme === 'Dark' ? '#BB86FC' : '#6200EE'}
+              />
+            </View>
+
+            <TouchableOpacity onPress={resetAccessibility}>
+              <Text style={{ 
+                color: theme === 'Dark' ? '#BB86FC' : '#6200EE', 
+                marginTop: 10,
+                fontSize: textSize
+              }}>
+                {t('reset')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Collapsible>
+
+        {/* Feedback Section */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.row} 
+            onPress={() => router.push('./feedback')}
+            accessibilityLabel={t('feedback')}
+          >
+            <MaterialIcons name="feedback" size={24} color={theme === 'Dark' ? '#BB86FC' : '#6200EE'} />
+            <Text style={[styles.text, { fontSize: textSize, color: highContrast ? '#FFFFFF' : theme === 'Dark' ? '#E0E0E0' : '#333333' }]}>
+              {t('feedback')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Sign Out Button */}
+        <TouchableOpacity 
+          style={[
+            styles.signOutButton,
+            { backgroundColor: theme === 'Dark' ? '#BB86FC' : '#6200EE' }
+          ]}
+          onPress={handleSignOut}
+        >
+          <Text style={[styles.signOutText, { fontSize: textSize }]}>{t('signOut')}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
   );
-}
-
-type NavItemProps = {
-  icon: string;
-  title: string;
-  onPress: () => void;
-  theme: 'Light' | 'Dark';
 };
-
-const NavItem = ({ icon, title, onPress, theme }: NavItemProps) => (
-  <TouchableOpacity onPress={onPress} style={styles.navItem}>
-    <Ionicons
-      name={icon}
-      size={22}
-      color={theme === 'Dark' ? Colors.lightBlue : Colors.deepBlue}
-    />
-    <Text
-      style={[
-        styles.navItemText,
-        { color: theme === 'Dark' ? Colors.white : Colors.black },
-      ]}
-    >
-      {title}
-    </Text>
-    <Ionicons
-      name="chevron-forward"
-      size={18}
-      color={theme === 'Dark' ? Colors.lightBlue : Colors.deepBlue}
-    />
-  </TouchableOpacity>
-);
 
 const styles = StyleSheet.create({
   container: {
+    marginVertical: 60,
+    marginHorizontal: 10,
     flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
-  contentContainer: {
-    paddingBottom: 40,
+  scrollContainer: {
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  profileCard: {
-    borderRadius: 12,
-    padding: 20,
-    margin: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: Colors.lightBlue,
-  },
-  editIcon: {
-    position: 'absolute',
-    bottom: 5,
-    right: 5,
-    backgroundColor: Colors.teal,
-    borderRadius: 15,
-    padding: 5,
-  },
-  nameContainer: {
-    flex: 1,
-    marginLeft: 20,
-  },
-  nameDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  nameText: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginRight: 8,
-  },
-  nameInput: {
-    fontSize: 20,
-    fontWeight: '600',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.teal,
-    paddingVertical: 4,
-    width: '100%',
-  },
-  joinedText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  settingsCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  settingLabel: {
-    flex: 1,
-    fontSize: 16,
-    marginLeft: 12,
-  },
-  picker: {
-    width: 120,
-    height: 40,
-  },
-  navCard: {
-    borderRadius: 12,
-    paddingVertical: 8,
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  navItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-  },
-  navItemText: {
-    flex: 1,
-    fontSize: 16,
-    marginLeft: 12,
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 8,
-    marginHorizontal: 16,
-    marginTop: 8,
-  },
-  signOutText: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    width: '80%',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
     marginBottom: 20,
   },
-  modalButton: {
-    width: '100%',
-    padding: 14,
+  title: {
+    flex: 1,
+    fontSize: 28,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  profileSection: {
+    alignItems: 'center',
+    marginBottom: 30,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#CCC',
+  },
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: 10,
+  },
+  uploadText: {
+    textAlign: 'center',
+    marginTop: 5,
+    fontSize: 14,
+  },
+  usernameContainer: {
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  usernameText: {
+    fontWeight: 'bold',
+    marginRight: 10,
+  },
+  usernameInput: {
+    borderBottomWidth: 1,
+    padding: 5,
+    minWidth: 150,
+    textAlign: 'center',
+  },
+  editContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  editButton: {
+    marginLeft: 10,
+  },
+  section: {
+    marginBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#CCC',
+    paddingBottom: 10,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  text: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 16,
+  },
+  collapsible: {
+    paddingLeft: 40,
+    paddingTop: 10,
+  },
+  signOutButton: {
+    marginTop: 30,
+    padding: 15,
     borderRadius: 8,
     alignItems: 'center',
-    marginVertical: 6,
+    justifyContent: 'center',
+    elevation: 3,
   },
-  modalButtonText: {
-    color: Colors.white,
+  signOutText: {
     fontWeight: 'bold',
+    color: '#FFFFFF',
   },
 });
+
+export default SettingsScreen;

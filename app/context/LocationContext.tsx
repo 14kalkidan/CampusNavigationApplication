@@ -70,13 +70,7 @@ export const MapProvider = ({ children }: { children: ReactNode }) => {
     
     setLoading(true);
     try {
-      /* TODO: Replace with your Django API call
-      const response = await fetch(`YOUR_API/route?start=${currentLocation.latitude},${currentLocation.longitude}&end=${destination.latitude},${destination.longitude}&mode=${travelMode}`);
-      const data = await response.json();
-      setRoute(data);
-      */
-
-      // Mock response - DELETE when using real API
+     
       const mockRoute: Route = {
         points: [
           currentLocation,
@@ -89,8 +83,8 @@ export const MapProvider = ({ children }: { children: ReactNode }) => {
         distance: '5.2 km',
         duration: '15 mins',
         instructions: [
-          'Head northeast on Bole Road',
-          'Turn right onto Cameroon Street',
+          'Head northeast',
+          'Turn right',
           'Destination will be on your left'
         ]
       };

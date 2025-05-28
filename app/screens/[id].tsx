@@ -1,56 +1,62 @@
-import React, { useState } from 'react';
-import { View, ScrollView, Text, Image, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import TopNav from '../components/TopNav';
-import SearchBar from '../components/SearchBar';
-import { Colors } from '../styles/global';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Animated, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { fetchPlacesByCategory } from '../APIServices/placeAPI';
+import { Colors } from '../styles/global';
+import SearchBar from '../components/SearchBar';
+import GoBackButton from '../components/GoBackButton';
+import TopNav from '../components/TopNav';
 
-// Mock data for different categories
-const categoryData = {
-  cafe: [
-    {
-      id: '1',
-      name: 'kk',
-      location: 'Student Center, Floor 1',
-      image: require('../../assets/images/4.jpg'),
-      description: 'The perfect spot for your morning brew with artisanal coffee and fresh pastries. Open 7am-9pm daily.',
-      hours: '7:00 AM - 9:00 PM',
-    },
-    {
-      id: '2',
-      name: 'central',
-      location: 'Main Library, Entrance',
-      image: require('../../assets/images/4.jpg'),
-      description: 'Quiet study spot with specialty teas and light snacks. Power outlets at every table.',
-      hours: '8:00 AM - 8:00 PM',
-    }
-  ],
-  office: [
-    {
-      id: '3',
-      name: 'Registrar Office',
-      location: 'Administration Building, Room 101',
-      image: require('../../assets/images/6.jpg'),
-      description: 'Handle all your enrollment, transcripts, and academic records here. Bring your student ID.',
-      hours: '9:00 AM - 5:00 PM',
-    }
-  ],
-  // Add other categories...
-};
+interface Place {
+  id: number;
+  name: string;
+  location: string;
+  description: string;
+  hours: string;
+  image: string | null;
+  latitude: number;
+  longitude: number;
+  category?: string; 
+}
 
 export default function CategoryScreen() {
   const { id } = useLocalSearchParams();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [searchText, setSearchText] = useState('');
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [animation] = useState(new Animated.Value(0));
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const currentCategory = categoryData[id] || [];
-  
-  const filteredPlaces = currentCategory.filter(place => 
-    place.name.toLowerCase().includes(searchText.toLowerCase()) ||
-    place.location.toLowerCase().includes(searchText.toLowerCase())
+  useEffect(() => {
+    const loadPlaces = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const categoryId = typeof id === 'string' ? id : id[0]; 
+        const data = await fetchPlacesByCategory(categoryId.toLowerCase());
+        const enrichedPlaces = data.map(place => ({
+          ...place,
+          latitude: place.latitude || 9.0315, 
+          longitude: place.longitude || 38.7632, 
+        }));
+        setPlaces(enrichedPlaces);
+      } catch (err: any) {
+        setError(err.message || 'Failed to load places');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadPlaces();
+  }, [id]);
+
+  const filteredPlaces = places.filter(
+    (place) =>
+      place.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      place.location.toLowerCase().includes(searchText.toLowerCase())
   );
 
   const toggleCard = (placeId: string) => {
@@ -72,45 +78,70 @@ export default function CategoryScreen() {
 
   const cardHeight = animation.interpolate({
     inputRange: [0, 1],
-    outputRange: [100, 200] // Adjust based on your content
+    outputRange: [100, 200],
   });
+
+  const getImageSource = (image: string | null) => {
+    return image ? { uri: image } : require('../../assets/images/1.jpg');
+  };
+
+  const handleImagePress = (place: Place) => {
+    router.push({
+      pathname: '/(tabs)/search',
+      params: {
+        latitude: place.latitude.toString(),
+        longitude: place.longitude.toString(),
+        name: place.name,
+        category: place.category || 'Unknown',
+        image: place.image || '', 
+      },
+    });
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <TopNav />
-      
+      <View style={styles.header}>
+        <GoBackButton />
+        <Text style={styles.categoryTitle}>
+          {typeof id === 'string' ? id.charAt(0).toUpperCase() + id.slice(1) : id[0]} Spots
+        </Text>
+      </View>
+
       <View style={styles.searchContainer}>
-        <SearchBar 
+        <SearchBar
           value={searchText}
           onChangeText={setSearchText}
-          placeholder={`Search ${id}...`}
+          placeholder={`Search ${typeof id === 'string' ? id : id[0]}...`}
         />
       </View>
 
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 20 }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.categoryTitle}>
-          {id.charAt(0).toUpperCase() + id.slice(1)} Spots
-        </Text>
-
-        {filteredPlaces.length > 0 ? (
+        {loading ? (
+          <Text style={styles.loadingText}>Loading places...</Text>
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : filteredPlaces.length > 0 ? (
           filteredPlaces.map((place) => (
-            <Animated.View 
+            <Animated.View
               key={place.id}
               style={[
                 styles.card,
-                { height: expandedCard === place.id ? cardHeight : 100 }
+                { height: expandedCard === place.id.toString() ? cardHeight : 100 },
               ]}
             >
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.cardContent}
                 activeOpacity={0.9}
-                onPress={() => toggleCard(place.id)}
+                onPress={() => toggleCard(place.id.toString())}
               >
-                <Image source={place.image} style={styles.cardImage} />
-                
+                <TouchableOpacity onPress={() => handleImagePress(place)}>
+                  <Image source={getImageSource(place.image)} style={styles.cardImage} />
+                </TouchableOpacity>
+
                 <View style={styles.textContainer}>
                   <Text style={styles.placeName}>{place.name}</Text>
                   <Text style={styles.placeLocation}>{place.location}</Text>
@@ -118,18 +149,18 @@ export default function CategoryScreen() {
                 </View>
               </TouchableOpacity>
 
-              {expandedCard === place.id && (
+              {expandedCard === place.id.toString() && (
                 <View style={styles.expandedContent}>
                   <Text style={styles.description}>{place.description}</Text>
-                  
-                  
                 </View>
               )}
             </Animated.View>
           ))
         ) : (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No {id} found matching your search</Text>
+            <Text style={styles.emptyText}>
+              No {typeof id === 'string' ? id : id[0]} found matching your search
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -142,6 +173,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
   searchContainer: {
     paddingHorizontal: 20,
     paddingVertical: 12,
@@ -151,11 +188,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   categoryTitle: {
+    flex: 1,
     fontSize: 24,
     fontWeight: '600',
     color: Colors.textDark,
-    marginBottom: 20,
-    marginTop: 10,
+    textAlign: 'center',
   },
   card: {
     backgroundColor: Colors.white,
@@ -210,18 +247,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 12,
   },
-  directionButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  directionText: {
-    color: Colors.white,
-    fontWeight: '600',
-    fontSize: 14,
-  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -230,5 +255,17 @@ const styles = StyleSheet.create({
   emptyText: {
     color: Colors.secondary,
     fontSize: 16,
+  },
+  loadingText: {
+    color: Colors.secondary,
+    textAlign: 'center',
+    fontSize: 16,
+    marginVertical: 20,
+  },
+  errorText: {
+    color: Colors.error || '#FF4D4F',
+    textAlign: 'center',
+    fontSize: 16,
+    marginVertical: 20,
   },
 });

@@ -1,11 +1,10 @@
-// context/NotificationContext.tsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Alert } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import api from '../util/api';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Alert, Platform } from 'react-native';
+import api from '../APIServices/authAPI';
 
 type Notification = {
-  id: stri
+  id: string;
   title: string;
   message: string;
   data?: any;
@@ -48,13 +47,17 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     }
   };
 
-  // Setup push notifications
   useEffect(() => {
-    const subscription = Notifications.addNotificationReceivedListener(notification => {
-      fetchNotifications(); // Refresh when new notification arrives
-    });
+    let subscription;
+    if (Platform.OS === 'ios') {
+      subscription = Notifications.addNotificationReceivedListener(notification => {
+        fetchNotifications(); 
+      });
+    }
 
-    return () => subscription.remove();
+    return () => {
+      if (subscription) subscription.remove();
+    };
   }, []);
 
   return (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 
 type ButtonProps = {
@@ -9,6 +9,7 @@ type ButtonProps = {
   loading?: boolean;
   accessibilityHint?: string;
 };
+
 
 export const Button = ({ 
   title, 
@@ -41,6 +42,7 @@ export const Button = ({
         </Text>
       )}
     </TouchableOpacity>
+    
   );
 };
 

@@ -1,14 +1,14 @@
 import { StyleSheet } from "react-native";
 
 export const Colors = {
-  primary: "#f97316",       // Orange-500 (for buttons)
-  secondary: "#6b7280",     // Gray-500
-  green: "#3ab795",         // Custom green
-  error: "#ef4444",         // Red-500
-  background: "#f8fafc",    // Gray-50
+  primary: "#003865",      
+  secondary: "orange",    
+  green: "#FFB000",        
+  error: "#ef4444",         
+  background: "#f8fafc",    
   white: "#ffffff",
-  border: "#d1d5db",        // Gray-300
-  textDark: "#1f2937",      // Gray-800
+  border: "#d1d5db",        
+  textDark: "#1f2937",      
   overlayDark: "rgba(0, 0, 0, 0.5)",
 };
 

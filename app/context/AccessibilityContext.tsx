@@ -13,15 +13,14 @@ type AccessibilityContextType = {
 const AccessibilityContext = createContext<AccessibilityContextType | undefined>(undefined);
 
 export const AccessibilityProvider = ({ children }: { children: ReactNode }) => {
-  // Default to system preferences
-  const [textScale, setTextScale] = useState(1.0); // 1.0 = 100%
+  const [textScale, setTextScale] = useState(1.0); 
   const [highContrast, setHighContrast] = useState(Appearance.getColorScheme() === 'dark');
-  const [isScreenReaderEnabled] = useState(false); // Would use AccessibilityInfo in real app
-  const [reduceMotionEnabled] = useState(false); // Would use AccessibilityInfo in real app
+  const [isScreenReaderEnabled] = useState(false); 
+  const [reduceMotionEnabled] = useState(false); 
 
   const value = useMemo(() => ({
     textScale,
-    setTextScale: (scale: number) => setTextScale(Math.max(0.8, Math.min(scale, 1.5))), // Clamp between 80%-150%
+    setTextScale: (scale: number) => setTextScale(Math.max(0.8, Math.min(scale, 1.5))), 
     highContrast,
     toggleContrast: () => setHighContrast(prev => !prev),
     isScreenReaderEnabled,

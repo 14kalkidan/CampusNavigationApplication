@@ -1,94 +1,124 @@
-import React, { useState, useEffect } from 'react';
+// app/screens/GalleryScreen.tsx
+import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
+import * as MediaLibrary from "expo-media-library";
+import * as ImagePicker from "expo-image-picker";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
+import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  Image,
-  ScrollView,
-  TouchableOpacity,
-  Modal,
-  StyleSheet,
-  Dimensions,
+  ActivityIndicator,
   Alert,
+  Dimensions,
+  Image,
+  Modal,
   SafeAreaView,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import * as FileSystem from 'expo-file-system';
-import * as MediaLibrary from 'expo-media-library';
-import { fetchImages } from '../util/api'; // Import API function
-import TopNav from '../components/TopNav'; // Import TopNav
-import { Colors } from '../styles/global';
-import { useAuth } from '../context/AuthContext'; // Import AuthContext
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import TopNav from "../components/TopNav";
+import { useAuth } from "../context/AuthContext";
+import { Colors } from "../styles/global";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 interface GalleryImage {
   id: number;
-  image_url: string;
+  image: string;
   place: string;
   comment: string;
 }
 
 export default function GalleryScreen() {
   const router = useRouter();
-  const { user } = useAuth(); // Get user from AuthContext
-  const isSignedIn = !!user; // Determine if user is signed in
+  const { isSignedIn } = useAuth();
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
-  const [images, setImages] = useState<GalleryImage[]>([]); // State for fetched images
-  const [loading, setLoading] = useState(true); // Loading state
+  const [images, setImages] = useState<GalleryImage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch images from Django API
   useEffect(() => {
     const loadImages = async () => {
       try {
-        const data = await fetchImages();
+        setLoading(true);
+        const data: GalleryImage[] = [
+          {
+            id: 1,
+            image: Image.resolveAssetSource(require("../../assets/images/3.jpg")).uri,
+            place: "Library",
+            comment: "The central hub for quiet study and resources.",
+          },
+          {
+            id: 2,
+            image: Image.resolveAssetSource(require("../../assets/images/4.jpg")).uri,
+            place: "Cafeteria",
+            comment: "Where students gather for meals and hangouts.",
+          },
+          {
+            id: 3,
+            image: Image.resolveAssetSource(require("../../assets/images/5.jpg")).uri,
+            place: "Dormitory",
+            comment: "A peaceful home for students on campus.",
+          },
+          {
+            id: 4,
+            image: Image.resolveAssetSource(require("../../assets/images/6.jpg")).uri,
+            place: "Sports Field",
+            comment: "Perfect spot for games and afternoon jogs.",
+          },
+        ];
         setImages(data);
-        setLoading(false);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to load images from server');
+        setError(null);
+      } catch (err: any) {
+        setError("Failed to load sample gallery images");
+      } finally {
         setLoading(false);
       }
     };
+
     loadImages();
   }, []);
 
   const downloadImage = async (imageUrl: string) => {
     try {
       const fileUri = `${FileSystem.documentDirectory}downloadedImage.jpg`;
-      await FileSystem.downloadAsync(imageUrl, fileUri);
+      const { uri } = await FileSystem.downloadAsync(imageUrl, fileUri);
 
       const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'We need permission to save images to your gallery');
+      if (status !== "granted") {
+        Alert.alert("Permission required", "We need permission to save images to your gallery");
         return;
       }
 
-      const asset = await MediaLibrary.createAssetAsync(fileUri);
-      const album = await MediaLibrary.getAlbumAsync('MyAppGallery');
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      const album = await MediaLibrary.getAlbumAsync("MyAppGallery");
       if (album == null) {
-        await MediaLibrary.createAlbumAsync('MyAppGallery', asset, false);
+        await MediaLibrary.createAlbumAsync("MyAppGallery", asset, false);
       } else {
         await MediaLibrary.addAssetsToAlbumAsync([asset], album.id, false);
       }
-      Alert.alert('Download Successful', 'The image has been downloaded to your gallery');
+      Alert.alert("Download Successful", "The image has been downloaded to your gallery");
     } catch (error) {
-      console.error('Error downloading image:', error);
-      Alert.alert('Download Failed', 'Failed to download the image');
+      console.error("Error downloading image:", error);
+      Alert.alert("Download Failed", "Failed to download the image");
     }
   };
 
   return (
     <View style={styles.container}>
       <SafeAreaView>
-        <TopNav isSignedIn={isSignedIn} /> {/* Add TopNav */}
+        <TopNav isSignedIn={isSignedIn} />
       </SafeAreaView>
 
-      {/* Title */}
       <Text style={styles.title}>Gallery</Text>
 
-      {/* Loading State */}
       {loading ? (
         <Text style={styles.loadingText}>Loading images...</Text>
+      ) : error ? (
+        <Text style={styles.errorText}>{error}</Text>
       ) : images.length === 0 ? (
         <Text style={styles.loadingText}>No images available</Text>
       ) : (
@@ -102,24 +132,18 @@ export default function GalleryScreen() {
               accessibilityLabel={`View ${img.place} image`}
               accessibilityRole="imagebutton"
             >
-              <Image
-                source={{ uri: img.image_url }}
-                style={styles.image}
-                resizeMode="cover"
-                defaultSource={require('@/assets/images/1.jpg')} // Optional fallback
-              />
+              <Image source={{ uri: img.image }} style={styles.image} resizeMode="cover" />
             </TouchableOpacity>
           ))}
         </ScrollView>
       )}
 
-      {/* Modal */}
       {selectedImage && (
         <Modal visible={true} transparent animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Image
-                source={{ uri: selectedImage.image_url }}
+                source={{ uri: selectedImage.image }}
                 style={styles.fullImage}
                 resizeMode="contain"
               />
@@ -135,7 +159,7 @@ export default function GalleryScreen() {
                 <Ionicons name="close" size={28} color="black" />
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => downloadImage(selectedImage.image_url)}
+                onPress={() => downloadImage(selectedImage.image)}
                 style={styles.downloadBtn}
                 accessible
                 accessibilityLabel={`Download ${selectedImage.place} image`}
@@ -147,6 +171,23 @@ export default function GalleryScreen() {
           </View>
         </Modal>
       )}
+
+      {/* Floating Upload Icon */}
+      <TouchableOpacity
+        style={styles.fabButton}
+        onPress={() => {
+          if (isSignedIn) {
+            router.push("../screens/UploadImage");
+          } else {
+            router.push("../screens/auth");
+          }
+        }}
+        accessible
+        accessibilityLabel="Upload new image"
+        accessibilityHint="Navigate to upload screen or login if not signed in"
+      >
+        <Ionicons name="cloud-upload-outline" size={28} color="white" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -154,24 +195,32 @@ export default function GalleryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     paddingTop: 40,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     margin: 16,
+    color: Colors.textDark,
+    textAlign: "center",
   },
   loadingText: {
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 20,
     color: Colors.textGray,
   },
+  errorText: {
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 20,
+    color: Colors.error,
+  },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
     paddingHorizontal: 12,
   },
   imageWrap: {
@@ -179,46 +228,47 @@ const styles = StyleSheet.create({
     aspectRatio: 0.8,
     marginBottom: 16,
     borderRadius: 12,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   image: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 16,
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    alignItems: "center",
     width: width * 0.85,
   },
   fullImage: {
-    width: '100%',
+    width: "100%",
     height: width * 0.85,
     borderRadius: 12,
     marginBottom: 10,
   },
   place: {
-    fontWeight: 'bold',
+    fontWeight: "bold",
     fontSize: 18,
     marginBottom: 4,
-    textAlign: 'center',
+    textAlign: "center",
+    color: Colors.textDark,
   },
   comment: {
     fontSize: 14,
-    color: '#555',
-    textAlign: 'center',
+    color: Colors.textGray,
+    textAlign: "center",
     marginBottom: 10,
   },
   closeBtn: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     right: 10,
   },
@@ -226,5 +276,19 @@ const styles = StyleSheet.create({
     marginTop: 0,
     paddingVertical: 2,
     paddingHorizontal: 2,
+  },
+  fabButton: {
+    position: "absolute",
+    bottom: 30,
+    right: 20,
+    backgroundColor: Colors.primary,
+    borderRadius: 30,
+    padding: 16,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    zIndex: 10,
   },
 });

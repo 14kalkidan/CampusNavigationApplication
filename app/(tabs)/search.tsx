@@ -1,309 +1,553 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import Tts from 'react-native-tts';
+import { fetchRoute } from '../APIServices/routeAPI';
+import { searchPlaces } from '../APIServices/searchAPI';
+import GoBackButton from '../components/GoBackButton';
+import PlaceCard from '../components/PlaceCard';
+import SearchBar from '../components/SearchBar';
 
-// Django API endpoint for GraphHopper routing
-const API_URL = 'http://your-django-api.com/route';
+const { width, height } = Dimensions.get('window');
 
-type Coordinate = {
+const AASTU_REGION = {
+  latitude: 9.0315,
+  longitude: 38.7632,
+  latitudeDelta: 0.005,
+  longitudeDelta: 0.005,
+};
+
+// Rerouting constants
+const REROUTE_DISTANCE_THRESHOLD = 20; // meters
+const REROUTE_DEBOUNCE_TIME = 2000; // ms
+const MAX_REROUTE_ATTEMPTS = 3;
+
+interface Place {
+  id: number;
+  name: string;
+  category: string;
+  description?: string;
+  image?: string | null;
   latitude: number;
   longitude: number;
-};
+}
 
-type RouteData = {
-  distance: string; // e.g., "5.2 km"
-  duration: string; // e.g., "15 mins"
-  points: Coordinate[]; // Array of coordinates for polyline
-  instructions: string[]; // Turn-by-turn instructions
-};
+interface Instruction {
+  text: string;
+  distance: number;
+  time: number;
+}
 
-export default function MapScreen() {
-  const [location, setLocation] = useState<Coordinate | null>(null);
-  const [destination, setDestination] = useState<Coordinate | null>(null);
-  const [route, setRoute] = useState<RouteData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [travelMode, setTravelMode] = useState<'car' | 'bike' | 'foot'>('car');
+interface Route {
+  coords: { latitude: number; longitude: number }[];
+  distance: number;
+  duration: number;
+  instructions: Instruction[];
+}
+
+export default function MapScreen({ navigation }) {
   const mapRef = useRef<MapView>(null);
-  const router = useRouter();
+  const { latitude, longitude, name, category, image } = useLocalSearchParams();
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [route, setRoute] = useState<Route | null>(null);
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [travelMode, setTravelMode] = useState<'foot' | 'bike' | 'car'>('foot');
+  const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
+  const [loading, setLoading] = useState(false);
+  const [lastRerouteLocation, setLastRerouteLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [rerouteAttempts, setRerouteAttempts] = useState(0);
+  const rerouteTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [ttsInitialized, setTtsInitialized] = useState(false);
 
-  // Sample destination in Addis Ababa
-  const sampleDestination = {
-    latitude: 9.005401,
-    longitude: 38.763611,
-    name: 'Sample Destination',
-    address: '123 Main St, Addis Ababa',
-  };
-
-  // Fetch user location using GPS
+  // Initialize TTS
   useEffect(() => {
-    (async () => {
+    const initTts = async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setError('Permission to access location was denied. Please enable location services.');
-          setLoading(false);
-          return;
-        }
-
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-        setLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        });
-        setLoading(false);
-      } catch (err) {
-        setError('Failed to fetch location. Please try again.');
-        setLoading(false);
+        await Tts.getInitStatus(); // Check if TTS is ready
+        await Tts.setDefaultLanguage('en-US');
+        await Tts.setDefaultRate(0.5);
+        await Tts.setDefaultPitch(1.0);
+        setTtsInitialized(true);
+        console.log('TTS initialized successfully');
+        // Test TTS
+        Tts.speak('TTS initialized').catch((error) => console.error('TTS test error:', error));
+      } catch (error) {
+        console.error('TTS initialization error:', error);
+        Alert.alert('TTS Error', 'Failed to initialize text-to-speech. Please check device settings.');
       }
-    })();
+    };
+
+    initTts();
+
+    return () => {
+      Tts.stop();
+    };
   }, []);
 
-  // Calculate route when destination or travel mode changes
+  // Speak instructions when route changes and TTS is initialized
   useEffect(() => {
-    if (location && destination) {
-      calculateRoute();
+    if (ttsInitialized && route?.instructions?.length > 0) {
+      console.log('Preparing to speak instructions:', route.instructions);
+      route.instructions.forEach((instruction, index) => {
+        if (instruction.text && typeof instruction.text === 'string') {
+          setTimeout(() => {
+            console.log(`Speaking instruction ${index + 1}: ${instruction.text}`);
+            Tts.speak(`${index + 1}. ${instruction.text}`).catch((error) =>
+              console.error('TTS speak error:', error)
+            );
+          }, index * 2500); // Increased delay for clarity
+        }
+      });
     }
-  }, [location, destination, travelMode]);
+  }, [route, ttsInitialized]);
 
-  const calculateRoute = async () => {
-    if (!location || !destination) {
-      setError('Current location or destination is not available.');
-      setLoading(false);
-      return;
+  useEffect(() => {
+    if (latitude && longitude && name && category) {
+      const place: Place = {
+        id: Date.now(),
+        name: name as string,
+        category: category as string,
+        latitude: parseFloat(latitude as string),
+        longitude: parseFloat(longitude as string),
+        description: '',
+        image: image as string | null,
+      };
+      setSelectedPlace(place);
+      calculateRoute(place);
     }
+  }, [latitude, longitude, name, category, image]);
 
-    setLoading(true);
+  const getLocation = useCallback(async () => {
     try {
-      // Call Django/GraphHopper API
-      const response = await fetch(
-        `${API_URL}?start=${location.latitude},${location.longitude}&end=${destination.latitude},${destination.longitude}&vehicle=${travelMode}`,
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required.');
+        return;
+      }
+
+      const { coords } = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      setLocation(coords);
+      setLastRerouteLocation(coords);
+
+      const subscriber = await Location.watchPositionAsync(
         {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 10000, // Prevent hanging
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10,
+          timeInterval: 5000,
+        },
+        (newLocation) => {
+          setLocation(newLocation.coords);
+          checkForReroute(newLocation.coords);
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
+      return () => {
+        if (subscriber) subscriber.remove();
+      };
+    } catch (error: any) {
+      console.error('Location error:', error.message);
+      Alert.alert('Error', 'Failed to get location.');
+    }
+  }, [checkForReroute]);
+
+  const checkForReroute = useCallback(
+    (newLocation: { latitude: number; longitude: number }) => {
+      if (!selectedPlace || !lastRerouteLocation) return;
+
+      const distance = calculateDistance(
+        lastRerouteLocation.latitude,
+        lastRerouteLocation.longitude,
+        newLocation.latitude,
+        newLocation.longitude
+      );
+
+      if (distance > REROUTE_DISTANCE_THRESHOLD) {
+        if (rerouteTimerRef.current) {
+          clearTimeout(rerouteTimerRef.current);
+        }
+
+        rerouteTimerRef.current = setTimeout(() => {
+          calculateRoute(selectedPlace, true);
+          setLastRerouteLocation(newLocation);
+          setRerouteAttempts(0);
+        }, REROUTE_DEBOUNCE_TIME);
+      }
+    },
+    [selectedPlace, lastRerouteLocation, calculateRoute]
+  );
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3; // Earth radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  };
+
+  const calculateRoute = useCallback(
+    async (destination: Place, isReroute = false) => {
+      if (!location) {
+        Alert.alert('Error', 'Current location not available.');
+        return;
       }
 
-      // Expected GraphHopper response format (customized by your Django API)
-      const data = await response.json();
-      const routeData: RouteData = {
-        distance: `${(data.paths[0].distance / 1000).toFixed(1)} km`, // Convert meters to km
-        duration: `${Math.round(data.paths[0].time / 60000)} mins`, // Convert ms to mins
-        points: data.paths[0].points.coordinates.map(([lng, lat]: [number, number]) => ({
-          latitude: lat,
-          longitude: lng,
-        })),
-        instructions: data.paths[0].instructions.map((instr: any) => instr.text),
-      };
+      if (isReroute && rerouteAttempts >= MAX_REROUTE_ATTEMPTS) {
+        console.log('Max reroute attempts reached');
+        return;
+      }
 
-      setRoute(routeData);
+      try {
+        setLoading(true);
+        const start = `${location.latitude},${location.longitude}`;
+        const end = `${destination.latitude},${destination.longitude}`;
+        const response = await fetchRoute(start, end, travelMode);
+        console.log('fetchRoute Response:', JSON.stringify(response, null, 2));
 
-      // Fit map to route
-      if (routeData.points.length > 1) {
-        mapRef.current?.fitToCoordinates(routeData.points, {
-          edgePadding: { top: 100, right: 50, bottom: 50, left: 50 },
+        const coords = response.points.map(([lon, lat]: [number, number]) => ({
+          latitude: parseFloat(lat.toString()),
+          longitude: parseFloat(lon.toString()),
+        }));
+
+        const instructions: Instruction[] = response.instructions
+          ? response.instructions.map((instr: any) => ({
+              text: instr.text || '',
+              distance: instr.distance || 0,
+              time: instr.time || 0,
+            }))
+          : [];
+
+        console.log('Processed Instructions:', instructions);
+
+        setRoute({
+          coords,
+          distance: response.distance_km * 1000,
+          duration: response.time_minutes * 60,
+          instructions,
+        });
+
+        if (isReroute) {
+          setRerouteAttempts((prev) => prev + 1);
+        }
+
+        const allCoords = [
+          { latitude: location.latitude, longitude: location.longitude },
+          ...coords,
+        ];
+
+        mapRef.current?.fitToCoordinates(allCoords, {
+          edgePadding: { top: height * 0.3, right: width * 0.1, bottom: height * 0.3, left: width * 0.1 },
           animated: true,
         });
+      } catch (error: any) {
+        console.error('Routing error:', error.message);
+        if (isReroute) {
+          console.log('Reroute failed:', error.message);
+        } else {
+          Alert.alert('Routing Error', error.message || 'Failed to calculate route.');
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      // Mock data for fallback (remove in production if API is reliable)
-      const mockRoute: RouteData = {
-        distance: travelMode === 'car' ? '5.2 km' : travelMode === 'bike' ? '5.0 km' : '4.8 km',
-        duration: travelMode === 'car' ? '15 mins' : travelMode === 'bike' ? '20 mins' : '30 mins',
-        points: [
-          location,
+    },
+    [location, travelMode, rerouteAttempts]
+  );
+
+  const handleSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSelectedPlace(null);
+      setRoute(null);
+      setLastRerouteLocation(null);
+      setRerouteAttempts(0);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const places = await searchPlaces(query);
+
+      if (places.length > 0 && places[0].latitude && places[0].longitude) {
+        setSelectedPlace(places[0]);
+        setRoute(null);
+        setLastRerouteLocation(null);
+        setRerouteAttempts(0);
+
+        mapRef.current?.animateToRegion(
           {
-            latitude: (location.latitude + destination.latitude) / 2,
-            longitude: (location.longitude + destination.longitude) / 2,
+            latitude: places[0].latitude,
+            longitude: places[0].longitude,
+            latitudeDelta: 0.005,
+            longitudeDelta: 0.005,
           },
-          destination,
-        ],
-        instructions: [
-          `Head northeast on Main St by ${travelMode}`,
-          `Turn right onto Bole Rd by ${travelMode}`,
-          `Destination will be on your left`,
-        ],
-      };
-      setRoute(mockRoute);
-
-      if (mockRoute.points.length > 1) {
-        mapRef.current?.fitToCoordinates(mockRoute.points, {
-          edgePadding: { top: 100, right: 50, bottom: 50, left: 50 },
-          animated: true,
-        });
+          500
+        );
+      } else {
+        Alert.alert('Not Found', 'No matching place found.');
       }
-
-      setError(`Failed to fetch route: ${err.message}`);
+    } catch (error: any) {
+      console.error('Search error:', error.message);
+      Alert.alert('Search Error', error.message || 'Failed to fetch place.');
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const zoomToLocation = () => {
+    if (location) {
+      mapRef.current?.animateToRegion(
+        {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        },
+        500
+      );
+    } else {
+      Alert.alert('Error', 'Current location not available.');
+    }
   };
 
-  const handleDestinationSelect = () => {
-    setDestination(sampleDestination);
+  const toggleMapType = () => {
+    setMapType((prev) => (prev === 'standard' ? 'satellite' : 'standard'));
   };
+
+  useEffect(() => {
+    getLocation();
+
+    return () => {
+      if (rerouteTimerRef.current) {
+        clearTimeout(rerouteTimerRef.current);
+      }
+    };
+  }, [getLocation]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      {loading ? (
-        <ActivityIndicator size="large" style={styles.loader} />
-      ) : error ? (
-        <Text style={styles.error}>{error}</Text>
-      ) : (
-        <>
-          <MapView
-            ref={mapRef}
-            style={styles.map}
-            initialRegion={{
-              latitude: location?.latitude ?? 9.005401,
-              longitude: location?.longitude ?? 38.763611,
-              latitudeDelta: 0.0922,
-              longitudeDelta: 0.0421,
-            }}
-            showsUserLocation
-            showsMyLocationButton
-          >
-            {destination && (
-              <Marker
-                coordinate={destination}
-                title={sampleDestination.name}
-                description={sampleDestination.address}
-              />
-            )}
-            {route?.points?.length > 0 && (
-              <Polyline
-                coordinates={route.points}
-                strokeColor="#3498db"
-                strokeWidth={5}
-              />
-            )}
-          </MapView>
+    <View style={styles.container}>
+      <View style={[styles.searchContainer, searchFocused && styles.searchFocused]}>
+        <GoBackButton style={styles.backButton} navigation={navigation} />
+        <SearchBar
+          onSearch={handleSearch}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          style={styles.searchBar}
+        />
+      </View>
 
-          <View style={styles.controls}>
-            <TouchableOpacity style={styles.searchButton} onPress={handleDestinationSelect}>
-              <Ionicons name="search" size={24} color="white" />
-              <Text style={styles.searchText}>Use Sample Destination</Text>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={AASTU_REGION}
+        mapType={mapType}
+        showsUserLocation
+        showsMyLocationButton
+        showsBuildings
+        zoomEnabled
+        zoomTapEnabled
+        minZoomLevel={10}
+        maxZoomLevel={20}
+        showsTraffic={Platform.OS === 'android'}
+      >
+        {selectedPlace && (
+          <Marker
+            coordinate={{ latitude: selectedPlace.latitude, longitude: selectedPlace.longitude }}
+            title={selectedPlace.name}
+            description={selectedPlace.category}
+            pinColor="#DB4437"
+          />
+        )}
+        {route?.coords && (
+          <Polyline
+            coordinates={route.coords}
+            strokeColor="#4D90FE"
+            strokeWidth={5}
+            lineDashPattern={travelMode === 'foot' ? [10, 10] : undefined}
+          />
+        )}
+      </MapView>
+
+      <View style={styles.controls}>
+        <TouchableOpacity style={styles.locationButton} onPress={zoomToLocation}>
+          <MaterialIcons name="my-location" size={24} color="#000" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.mapTypeButton} onPress={toggleMapType}>
+          <MaterialIcons
+            name={mapType === 'standard' ? 'satellite' : 'map'}
+            size={24}
+            color="#000"
+          />
+        </TouchableOpacity>
+
+        <View style={styles.modeSelectorColumn}>
+          {['foot', 'bike', 'car'].map((mode) => (
+            <TouchableOpacity
+              key={mode}
+              style={[styles.modeButton, travelMode === mode && styles.activeMode]}
+              onPress={() => {
+                setTravelMode(mode as 'foot' | 'bike' | 'car');
+                if (selectedPlace) {
+                  setLastRerouteLocation(location);
+                  calculateRoute(selectedPlace);
+                }
+              }}
+            >
+              <FontAwesome5
+                name={mode === 'foot' ? 'walking' : mode === 'bike' ? 'bicycle' : 'car'}
+                size={18}
+                color={travelMode === mode ? '#fff' : '#000'}
+              />
             </TouchableOpacity>
+          ))}
+        </View>
+      </View>
 
-            <View style={styles.modeSelector}>
-              {(['car', 'bike', 'foot'] as const).map((mode) => (
-                <TouchableOpacity
-                  key={mode}
-                  style={[styles.modeButton, travelMode === mode && styles.activeMode]}
-                  onPress={() => setTravelMode(mode)}
-                >
-                  <Ionicons
-                    name={mode === 'car' ? 'car-sport' : mode === 'bike' ? 'bicycle' : 'walk'}
-                    size={24}
-                    color={travelMode === mode ? 'white' : '#3498db'}
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {route && (
-              <View style={styles.routeInfo}>
-                <Text style={styles.routeText}>Distance: {route.distance}</Text>
-                <Text style={styles.routeText}>Time: {route.duration}</Text>
-                <TouchableOpacity
-                  style={styles.directionsButton}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/directions',
-                      params: { instructions: JSON.stringify(route.instructions) },
-                    })
-                  }
-                >
-                  <Text style={styles.directionsText}>View Turn-by-Turn</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </>
+      {selectedPlace && (
+        <PlaceCard
+          place={selectedPlace}
+          onNavigate={() => {
+            setLastRerouteLocation(location);
+            calculateRoute(selectedPlace);
+          }}
+          distance={route?.distance}
+          duration={route?.duration}
+          instructions={route?.instructions}
+        />
       )}
-    </SafeAreaView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#4D90FE" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
   },
   map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  searchContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 30,
+    left: 15,
+    right: 15,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  searchFocused: {
+    top: Platform.OS === 'ios' ? 40 : 20,
+  },
+  backButton: {
+    marginRight: 10,
+  },
+  searchBar: {
     flex: 1,
-  },
-  loader: {
-    marginTop: 20,
-  },
-  error: {
-    color: 'red',
-    textAlign: 'center',
-    marginTop: 20,
   },
   controls: {
     position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-  },
-  searchButton: {
-    backgroundColor: '#3498db',
-    flexDirection: 'row',
+    right: 15,
+    bottom: 150,
+    zIndex: 10,
     alignItems: 'center',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 10,
   },
-  searchText: {
-    color: 'white',
-    marginLeft: 10,
-    fontWeight: 'bold',
-  },
-  modeSelector: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  locationButton: {
     backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
     marginBottom: 10,
+  },
+  mapTypeButton: {
+    backgroundColor: 'white',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    marginBottom: 10,
+  },
+  modeSelectorColumn: {
+    backgroundColor: 'white',
+    borderRadius: 30,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 10,
   },
   modeButton: {
-    padding: 10,
-    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
   },
   activeMode: {
-    backgroundColor: '#3498db',
+    backgroundColor: '#4D90FE',
+    borderRadius: 20,
   },
-  routeInfo: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
   },
-  routeText: {
-    fontSize: 16,
-    marginBottom: 5,
-  },
-  directionsButton: {
-    backgroundColor: '#3498db',
-    padding: 10,
-    borderRadius: 5,
+  loadingText: {
     marginTop: 10,
-  },
-  directionsText: {
-    color: 'white',
-    textAlign: 'center',
+    color: '#333',
   },
 });

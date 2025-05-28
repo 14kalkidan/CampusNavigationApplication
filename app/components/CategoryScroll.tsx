@@ -1,18 +1,19 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import React from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../styles/global';
 
 const categories = [
   { name: 'Cafe', icon: 'cafe' },
-  { name: 'Library', icon: 'book' },
+  { name: 'Library', icon: 'book' }, 
   { name: 'Office', icon: 'briefcase' },
+  { name: 'Dorm', icon: 'bed'},
   { name: 'Shops', icon: 'cart' },
   { name: 'Laboratory', icon: 'flask' },
-  { name: 'Classrooms', icon: 'school' },
-  { name: 'Parking', icon: 'car' },
-  { name: 'Games', icon: 'game-controller' },
+  { name: 'Classroom', icon: 'school' },
+  { name: 'other', icon: 'car' },
+  { name: 'Fun and games', icon: 'game-controller' },
 ];
 
 export default function CategoryScroll() {
@@ -44,24 +45,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   categoryPill: {
-    flexDirection: 'column', // Stack icon and text vertically
-    alignItems: 'center', // Center items horizontally
-    justifyContent: 'center', // Center items vertically
+    flexDirection: 'column', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
     backgroundColor: Colors.primary,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 20, // Slightly smaller radius for compact look
+    borderRadius: 20, 
     marginRight: 10,
-    width: 80, // Fixed width for consistency
-    height: 80, // Fixed height to accommodate stacked layout
+    width: 80, 
+    height: 80, 
   },
   icon: {
-    marginBottom: 4, // Space between icon and text
+    marginBottom: 4, 
   },
   text: {
     color: Colors.white,
     fontWeight: '600',
-    fontSize: 12, // Smaller font for compact layout
+    fontSize: 12, 
     textAlign: 'center',
   },
 });
