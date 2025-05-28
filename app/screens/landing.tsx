@@ -1,11 +1,11 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
+import React from "react";
+import { Image, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Colors, GlobalStyles } from "../styles/global";
-
+import { useAuth } from "../context/AuthContext"; 
 const Landing = () => {
   const router = useRouter();
-
+  const { signInAsGuest } = useAuth(); 
   return (
     <ImageBackground 
       source={require("../../assets/images/1.jpg")} 
@@ -27,7 +27,12 @@ const Landing = () => {
           <Text style={styles.mainButtonText}>Sign In</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity onPress={() => router.replace("/(tabs)")}>
+        <TouchableOpacity
+          onPress={() => {
+            signInAsGuest(); 
+            router.replace("/(tabs)");
+          }}
+        >
           <Text style={styles.linkText}>Continue as Guest</Text>
         </TouchableOpacity>
       </View>
