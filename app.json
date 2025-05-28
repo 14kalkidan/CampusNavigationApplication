@@ -2,6 +2,7 @@
   "expo": {
     "name": "ustogo",
     "slug": "ustogo",
+    "owner": "zorok",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -18,9 +19,20 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app uses your location to provide navigation services",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app uses your location to provide navigation services",
-        "UIBackgroundModes": ["location", "fetch"]
-      }
+        "NSMicrophoneUsageDescription": "This app uses the microphone for voice search.",
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "location",
+          "fetch"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "AASTUGO"
     },
+    "permissions": [
+      "microphone"
+    ],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -30,7 +42,10 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "FOREGROUND_SERVICE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "ACCESS_BACKGROUND_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+
       ],
       "config": {
         "googleMaps": {
@@ -44,9 +59,14 @@
           }
         },
         "android": {
-          "permissions": ["READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"]
+          "permissions": [
+            "READ_EXTERNAL_STORAGE",
+            "WRITE_EXTERNAL_STORAGE",
+            "android.permission.RECORD_AUDIO"
+          ]
         }
-      }
+      },
+      "package": "com.zorok.ustogo"
     },
     "web": {
       "bundler": "metro",
@@ -76,8 +96,9 @@
       "tsconfigPaths": true
     },
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "your-project-id-here"
+        "projectId": "9d92fe98-0629-4ed1-96b2-5a922ffad6bc"
       }
     }
   }
